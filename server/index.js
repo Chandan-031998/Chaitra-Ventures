@@ -12,6 +12,12 @@ require("dotenv").config();
 const JWT_SECRET = process.env.JWT_SECRET;
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+const rawDbPort = String(process.env.DB_PORT || "3306").trim();
+const parsedDbPort = Number.parseInt(rawDbPort, 10);
+const DB_PORT =
+  Number.isInteger(parsedDbPort) && parsedDbPort > 0 && parsedDbPort <= 65535
+    ? parsedDbPort
+    : 3306;
 const CORS_ORIGIN = (
   process.env.CORS_ORIGIN ||
   "http://localhost:5173,https://chaitraventures.vertexsoftware.in"
@@ -45,28 +51,39 @@ app.use(
 const UPLOAD_DIR = IS_VERCEL
   ? path.join("/tmp", "chaitra-uploads")
   : path.join(__dirname, "uploads");
+let uploadDirectoryReady = false;
 let uploadDirectoryError = null;
 
-try {
-  if (!fs.existsSync(UPLOAD_DIR)) {
-    fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+function ensureUploadDirectory() {
+  try {
+    if (!fs.existsSync(UPLOAD_DIR)) {
+      fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+    }
+    uploadDirectoryReady = true;
+    uploadDirectoryError = null;
+    return true;
+  } catch (error) {
+    uploadDirectoryReady = false;
+    uploadDirectoryError = error;
+    console.error("Upload directory initialization failed", {
+      name: error?.name,
+      code: error?.code,
+      message: error?.message,
+      stack: error?.stack,
+    });
+    return false;
   }
-} catch (error) {
-  uploadDirectoryError = error;
-  console.error("Unable to initialize upload directory", {
-    name: error?.name,
-    code: error?.code,
-    message: error?.message,
-  });
 }
+
+ensureUploadDirectory();
 
 // Vercel /tmp storage is ephemeral. Permanent production uploads still need external object storage.
 app.use("/uploads", express.static(UPLOAD_DIR));
 
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => {
-    if (uploadDirectoryError) {
-      cb(new Error("Upload storage is not available"), UPLOAD_DIR);
+    if (!ensureUploadDirectory()) {
+      cb(new Error("Upload storage is temporarily unavailable"), UPLOAD_DIR);
       return;
     }
     cb(null, UPLOAD_DIR);
@@ -93,7 +110,7 @@ const upload = multer({
 // -----------------------------
 const pool = mysql.createPool({
   host: process.env.DB_HOST,
-  port: Number(process.env.DB_PORT || 3306),
+  port: DB_PORT,
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
@@ -287,23 +304,26 @@ app.get("/", (_req, res) => {
 });
 
 app.get("/api/health", async (_req, res) => {
+  let database = "unavailable";
+
   try {
-    const [rows] = await pool.query("SELECT 1 AS ok");
-    ok(res, {
-      success: true,
-      service: "Chaitra Ventures API",
-      timestamp: new Date().toISOString(),
-      database: rows?.[0]?.ok === 1 ? "connected" : "unavailable",
-    });
+    await pool.query("SELECT 1");
+    database = "connected";
   } catch (error) {
-    logServerError("health", error);
-    ok(res, {
-      success: true,
-      service: "Chaitra Ventures API",
-      timestamp: new Date().toISOString(),
-      database: "unavailable",
+    console.error("Health database check failed", {
+      name: error?.name,
+      code: error?.code,
+      message: error?.message,
+      stack: error?.stack,
     });
   }
+
+  return res.status(200).json({
+    success: true,
+    service: "Chaitra Ventures API",
+    database,
+    timestamp: new Date().toISOString(),
+  });
 });
 
 // -----------------------------
@@ -452,10 +472,10 @@ app.post("/api/admin/login", async (req, res) => {
 
 app.post("/api/admin/upload", auth, upload.array("images", 10), async (req, res) => {
   try {
-    if (uploadDirectoryError) {
+    if (!uploadDirectoryReady || uploadDirectoryError) {
       return res.status(503).json({
         success: false,
-        message: "Upload storage is not available on the server",
+        message: "Upload storage is temporarily unavailable",
       });
     }
 
