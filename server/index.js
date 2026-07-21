@@ -735,4 +735,12 @@ app.use((error, _req, res, next) => {
   sendServerError(res, "unhandled", error);
 });
 
+const PORT = Number(process.env.PORT || 5001);
+
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`Chaitra Ventures API running locally on port ${PORT}`);
+  });
+}
+
 module.exports = app;
