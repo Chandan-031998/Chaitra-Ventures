@@ -49,10 +49,27 @@ export interface Enquiry {
   created_at?: string;
 }
 
-const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || "http://localhost:5001";
+export const API_BASE_URL =
+  import.meta.env.VITE_API_URL ||
+  (import.meta.env.DEV ? "http://localhost:5001" : "");
+
+function joinUrl(base: string, path: string) {
+  if (!base) return path;
+  return `${base.replace(/\/$/, "")}/${path.replace(/^\//, "")}`;
+}
+
+export function buildApiUrl(path: string) {
+  return joinUrl(API_BASE_URL, path);
+}
+
+export function buildUploadUrl(path: string) {
+  if (!path) return path;
+  if (/^https?:\/\//i.test(path)) return path;
+  return joinUrl(API_BASE_URL, path);
+}
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE_URL}${path}`, {
+  const res = await fetch(buildApiUrl(path), {
     headers: { "Content-Type": "application/json", ...(init?.headers || {}) },
     ...init,
   });
@@ -64,7 +81,7 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 async function apiUpload(path: string, token: string, form: FormData) {
-  const res = await fetch(`${API_BASE_URL}${path}`, {
+  const res = await fetch(buildApiUrl(path), {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
     body: form,

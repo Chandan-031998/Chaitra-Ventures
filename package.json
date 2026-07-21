@@ -10,6 +10,9 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.app.json"
   },
+  "engines": {
+    "node": "20.x"
+  },
   "dependencies": {
     "lucide-react": "^0.344.0",
     "react": "^18.3.1",

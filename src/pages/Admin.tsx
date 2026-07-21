@@ -1,9 +1,9 @@
 // src/pages/Admin.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import { LogOut, Plus, Trash2, Edit3, Building2, FolderKanban } from "lucide-react";
+import { buildApiUrl } from "../lib/api";
 
 const TOKEN_KEY = "chaitra_admin_token";
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:5001";
 
 type Tab = "properties" | "projects";
 type Mode = "sale" | "rent";
@@ -67,7 +67,7 @@ const emptyProject: Partial<Project> = {
 const isImageFile = (f: File) => /^image\//.test(f.type);
 
 async function apiJson<T>(url: string, opts: RequestInit = {}, token?: string) {
-  const res = await fetch(`${API_BASE}${url}`, {
+  const res = await fetch(buildApiUrl(url), {
     ...opts,
     headers: {
       ...(opts.headers || {}),
@@ -87,7 +87,7 @@ async function apiUploadImages(url: string, files: File[], token: string) {
   const fd = new FormData();
   files.forEach((f) => fd.append("images", f));
 
-  const res = await fetch(`${API_BASE}${url}`, {
+  const res = await fetch(buildApiUrl(url), {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -104,8 +104,8 @@ async function apiUploadImages(url: string, files: File[], token: string) {
 
 export default function Admin() {
   const [token, setToken] = useState<string | null>(() => localStorage.getItem(TOKEN_KEY));
-  const [username, setUsername] = useState("admin");
-  const [password, setPassword] = useState("chaitraventures");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [loginError, setLoginError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -425,7 +425,7 @@ export default function Admin() {
               </button>
 
               <p className="text-xs text-gray-500">
-                Tip: Set <b>VITE_API_BASE_URL</b> to your backend URL.
+                Tip: Set <b>VITE_API_URL</b> to your backend URL.
               </p>
             </form>
           </div>
