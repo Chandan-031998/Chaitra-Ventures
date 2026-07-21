@@ -18,6 +18,10 @@ const DB_PORT =
   Number.isInteger(parsedDbPort) && parsedDbPort > 0 && parsedDbPort <= 65535
     ? parsedDbPort
     : 3306;
+const DB_HOST = process.env.DB_HOST;
+const DB_USER = process.env.DB_USER;
+const DB_PASSWORD = process.env.DB_PASSWORD;
+const DB_NAME = process.env.DB_NAME;
 const CORS_ORIGIN = (
   process.env.CORS_ORIGIN ||
   "http://localhost:5173,https://chaitraventures.vertexsoftware.in"
@@ -109,18 +113,36 @@ const upload = multer({
 // -----------------------------
 // MySQL Pool
 // -----------------------------
-const pool = mysql.createPool({
-  host: process.env.DB_HOST,
-  port: DB_PORT,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
-  waitForConnections: true,
-  connectionLimit: 5,
-  queueLimit: 0,
-  enableKeepAlive: true,
-  keepAliveInitialDelay: 0,
-});
+let pool = null;
+
+function isDatabaseConfigured() {
+  return Boolean(DB_HOST && DB_USER && DB_NAME);
+}
+
+function getPool() {
+  if (!isDatabaseConfigured()) {
+    const error = new Error("Database is not configured");
+    error.code = "DB_CONFIG_MISSING";
+    throw error;
+  }
+
+  if (!pool) {
+    pool = mysql.createPool({
+      host: DB_HOST,
+      port: DB_PORT,
+      user: DB_USER,
+      password: DB_PASSWORD,
+      database: DB_NAME,
+      waitForConnections: true,
+      connectionLimit: 5,
+      queueLimit: 0,
+      enableKeepAlive: true,
+      keepAliveInitialDelay: 0,
+    });
+  }
+
+  return pool;
+}
 
 // -----------------------------
 // Helpers
@@ -308,7 +330,7 @@ app.get("/api/health", async (_req, res) => {
   let database = "unavailable";
 
   try {
-    await pool.query("SELECT 1");
+    await getPool().query("SELECT 1");
     database = "connected";
   } catch (error) {
     console.error("Health database check failed", {
@@ -334,7 +356,7 @@ app.get("/api/properties/featured", async (req, res) => {
   const limit = Math.min(Number(req.query.limit || 6), 50);
 
   try {
-    const [rows] = await pool.query(
+    const [rows] = await getPool().query(
       "SELECT * FROM properties WHERE featured=1 ORDER BY created_at DESC LIMIT ?",
       [limit]
     );
@@ -394,7 +416,7 @@ app.get("/api/properties", async (req, res) => {
   const sql = `SELECT * FROM properties WHERE ${where.join(" AND ")} ORDER BY created_at DESC`;
 
   try {
-    const [rows] = await pool.query(sql, params);
+    const [rows] = await getPool().query(sql, params);
     ok(res, rows.map((row) => rowToProperty(req, row)));
   } catch (error) {
     sendServerError(res, "list-properties", error);
@@ -405,7 +427,7 @@ app.get("/api/properties/:id", async (req, res) => {
   const id = Number(req.params.id);
 
   try {
-    const [rows] = await pool.query("SELECT * FROM properties WHERE id = ? LIMIT 1", [id]);
+    const [rows] = await getPool().query("SELECT * FROM properties WHERE id = ? LIMIT 1", [id]);
     const row = rows?.[0];
     if (!row) {
       return res.status(404).json({ success: false, message: "Not found" });
@@ -418,7 +440,7 @@ app.get("/api/properties/:id", async (req, res) => {
 
 app.get("/api/projects", async (_req, res) => {
   try {
-    const [rows] = await pool.query("SELECT * FROM projects ORDER BY created_at DESC");
+    const [rows] = await getPool().query("SELECT * FROM projects ORDER BY created_at DESC");
     ok(res, rows);
   } catch (error) {
     sendServerError(res, "list-projects", error);
@@ -429,7 +451,7 @@ app.get("/api/testimonials", async (req, res) => {
   const limit = Math.min(Number(req.query.limit || 3), 50);
 
   try {
-    const [rows] = await pool.query(
+    const [rows] = await getPool().query(
       "SELECT * FROM testimonials ORDER BY created_at DESC LIMIT ?",
       [limit]
     );
@@ -446,7 +468,7 @@ app.post("/api/enquiries", async (req, res) => {
   }
 
   try {
-    const [result] = await pool.query(
+    const [result] = await getPool().query(
       "INSERT INTO enquiries (property_id, name, email, phone, message) VALUES (?,?,?,?,?)",
       [property_id, name, email, phone, message]
     );
@@ -507,7 +529,7 @@ app.get("/api/admin/properties", auth, async (req, res) => {
   } ORDER BY created_at DESC`;
 
   try {
-    const [rows] = await pool.query(sql, params);
+    const [rows] = await getPool().query(sql, params);
     ok(res, rows.map((row) => rowToProperty(req, row)));
   } catch (error) {
     sendServerError(res, "admin-list-properties", error);
@@ -546,7 +568,7 @@ app.post("/api/admin/properties", auth, upload.none(), async (req, res) => {
 
   try {
     if (!id) {
-      const [result] = await pool.query(
+      const [result] = await getPool().query(
         `INSERT INTO properties
           (title, description, price, listing_type, property_type, location, bedrooms, bathrooms, area, images, amenities, featured, status)
          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
@@ -569,7 +591,7 @@ app.post("/api/admin/properties", auth, upload.none(), async (req, res) => {
       return ok(res, { ok: true, id: result.insertId });
     }
 
-    await pool.query(
+    await getPool().query(
       `UPDATE properties SET
         title=?, description=?, price=?, listing_type=?, property_type=?, location=?,
         bedrooms=?, bathrooms=?, area=?, images=?, amenities=?, featured=?, status=?
@@ -602,7 +624,7 @@ app.delete("/api/admin/properties/:id", auth, async (req, res) => {
   const id = Number(req.params.id);
 
   try {
-    await pool.query("DELETE FROM properties WHERE id = ?", [id]);
+    await getPool().query("DELETE FROM properties WHERE id = ?", [id]);
     ok(res, { ok: true });
   } catch (error) {
     sendServerError(res, "admin-delete-property", error);
@@ -611,7 +633,7 @@ app.delete("/api/admin/properties/:id", auth, async (req, res) => {
 
 app.get("/api/admin/projects", auth, async (_req, res) => {
   try {
-    const [rows] = await pool.query("SELECT * FROM projects ORDER BY created_at DESC");
+    const [rows] = await getPool().query("SELECT * FROM projects ORDER BY created_at DESC");
     ok(res, rows);
   } catch (error) {
     sendServerError(res, "admin-list-projects", error);
@@ -632,7 +654,7 @@ app.post("/api/admin/projects", auth, async (req, res) => {
 
   try {
     if (!id) {
-      const [result] = await pool.query(
+      const [result] = await getPool().query(
         `INSERT INTO projects (name, location, image, status, completion_year, units, type, description)
          VALUES (?,?,?,?,?,?,?,?)`,
         [
@@ -649,7 +671,7 @@ app.post("/api/admin/projects", auth, async (req, res) => {
       return ok(res, { ok: true, id: result.insertId });
     }
 
-    await pool.query(
+    await getPool().query(
       `UPDATE projects SET name=?, location=?, image=?, status=?, completion_year=?, units=?, type=?, description=? WHERE id=?`,
       [
         String(project.name),
@@ -673,7 +695,7 @@ app.delete("/api/admin/projects/:id", auth, async (req, res) => {
   const id = Number(req.params.id);
 
   try {
-    await pool.query("DELETE FROM projects WHERE id = ?", [id]);
+    await getPool().query("DELETE FROM projects WHERE id = ?", [id]);
     ok(res, { ok: true });
   } catch (error) {
     sendServerError(res, "admin-delete-project", error);
