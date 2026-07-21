@@ -1,8 +1,27 @@
+const path = require("path");
+
 let app;
 let startupError;
 
 try {
-  app = require("../index");
+  const loadCandidates = ["../index.js", path.join(process.cwd(), "index.js")];
+  let lastError = null;
+
+  for (const candidate of loadCandidates) {
+    try {
+      app = require(candidate);
+      break;
+    } catch (error) {
+      lastError = error;
+      if (error?.code !== "MODULE_NOT_FOUND") {
+        throw error;
+      }
+    }
+  }
+
+  if (!app && lastError) {
+    throw lastError;
+  }
 
   if (typeof app !== "function") {
     throw new TypeError("Express application was not exported correctly");
@@ -24,6 +43,10 @@ module.exports = (req, res) => {
       success: false,
       stage: "bootstrap",
       error: startupError.code || startupError.name || "BOOTSTRAP_FAILED",
+      message:
+        startupError.code === "MODULE_NOT_FOUND"
+          ? "Backend entry file or dependency was not bundled"
+          : "Backend bootstrap failed",
     });
   }
 
