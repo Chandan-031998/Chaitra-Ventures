@@ -24,7 +24,7 @@ const DB_PASSWORD = process.env.DB_PASSWORD;
 const DB_NAME = process.env.DB_NAME;
 const CORS_ORIGIN = (
   process.env.CORS_ORIGIN ||
-  "http://localhost:5173,https://chaitraventures.vertexsoftware.in"
+  "http://localhost:5173,https://chaitraventures.vertexsoftware.in,https://chairaventures.vertexsoftware.in"
 )
   .split(",")
   .map((value) => value.trim())
