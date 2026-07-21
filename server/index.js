@@ -9,13 +9,13 @@ const fs = require("fs");
 const multer = require("multer");
 require("dotenv").config();
 
-const PORT = process.env.PORT || 5001;
+const PORT = Number(process.env.PORT || 5001);
 const JWT_SECRET = process.env.JWT_SECRET;
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 const CORS_ORIGIN = (
   process.env.CORS_ORIGIN ||
-  "http://localhost:5173,https://chairaventures.vertexsoftware.in"
+  "http://localhost:5173,https://chaitraventures.vertexsoftware.in"
 )
   .split(",")
   .map((value) => value.trim())
@@ -626,5 +626,11 @@ app.use((error, _req, res, next) => {
 
   sendServerError(res, "unhandled", error);
 });
+
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`Chaitra Ventures API running locally on port ${PORT}`);
+  });
+}
 
 module.exports = app;
