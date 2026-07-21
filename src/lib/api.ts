@@ -49,29 +49,24 @@ export interface Enquiry {
   created_at?: string;
 }
 
-export const API_BASE_URL =
-  import.meta.env.VITE_API_URL ||
-  (import.meta.env.DEV ? "http://localhost:5001" : "");
+const configuredApiUrl = import.meta.env.VITE_API_URL?.trim();
 
-const CONFIGURATION_ERROR =
-  "Frontend API is not configured. Set VITE_API_URL to your backend URL.";
+export const API_BASE_URL = (
+  configuredApiUrl ||
+  (import.meta.env.PROD
+    ? "https://chaitra-ventures.vercel.app"
+    : "http://localhost:5001")
+).replace(/\/+$/, "");
 
-function joinUrl(base: string, path: string) {
-  if (!base) return path;
-  return `${base.replace(/\/$/, "")}/${path.replace(/^\//, "")}`;
-}
-
-export function buildApiUrl(path: string) {
-  if (!API_BASE_URL && !import.meta.env.DEV) {
-    throw new Error(CONFIGURATION_ERROR);
-  }
-  return joinUrl(API_BASE_URL, path);
+export function createApiUrl(path: string): string {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${API_BASE_URL}${normalizedPath}`;
 }
 
 export function buildUploadUrl(path: string) {
   if (!path) return path;
   if (/^https?:\/\//i.test(path)) return path;
-  return joinUrl(API_BASE_URL, path);
+  return createApiUrl(path);
 }
 
 function isJsonResponse(contentType: string | null) {
@@ -82,7 +77,13 @@ async function readErrorMessage(res: Response) {
   const contentType = res.headers.get("content-type");
 
   if (!isJsonResponse(contentType)) {
-    return "The frontend reached an HTML page instead of the API. Check VITE_API_URL and Vercel routing.";
+    const preview = (await res.text().catch(() => "")).slice(0, 150);
+    console.error("Admin/API request returned a non-JSON response", {
+      status: res.status,
+      url: res.url,
+      preview,
+    });
+    return "The backend returned an invalid response. Check the backend deployment.";
   }
 
   const payload = await res.json().catch(() => null);
@@ -95,8 +96,14 @@ async function parseJsonResponse<T>(res: Response): Promise<T> {
   const contentType = res.headers.get("content-type");
 
   if (!isJsonResponse(contentType)) {
+    const preview = (await res.text().catch(() => "")).slice(0, 150);
+    console.error("Admin/API request returned a non-JSON response", {
+      status: res.status,
+      url: res.url,
+      preview,
+    });
     throw new Error(
-      "The frontend reached an HTML page instead of the API. Check VITE_API_URL and Vercel routing."
+      "The backend returned an invalid response. Check the backend deployment."
     );
   }
 
@@ -104,7 +111,7 @@ async function parseJsonResponse<T>(res: Response): Promise<T> {
 }
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(buildApiUrl(path), {
+  const res = await fetch(createApiUrl(path), {
     headers: { "Content-Type": "application/json", ...(init?.headers || {}) },
     ...init,
   });
@@ -115,7 +122,7 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 async function apiUpload(path: string, token: string, form: FormData) {
-  const res = await fetch(buildApiUrl(path), {
+  const res = await fetch(createApiUrl(path), {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
     body: form,
