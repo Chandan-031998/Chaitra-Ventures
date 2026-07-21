@@ -201,6 +201,39 @@ function toStatus(value) {
   return "available";
 }
 
+function parseStringArray(value) {
+  if (value == null) return [];
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item).trim()).filter(Boolean);
+  }
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) {
+        return parsed.map((item) => String(item).trim()).filter(Boolean);
+      }
+    } catch {
+      return value
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
+    }
+    return [];
+  }
+  return [];
+}
+
+function toFeaturedFlag(value) {
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "1" || normalized === "true" || normalized === "on") return 1;
+    if (normalized === "0" || normalized === "false" || normalized === "off" || normalized === "") {
+      return 0;
+    }
+  }
+  return value ? 1 : 0;
+}
+
 function titleCase(value) {
   const text = String(value ?? "");
   return text ? text.charAt(0).toUpperCase() + text.slice(1) : text;
@@ -460,7 +493,7 @@ app.get("/api/admin/properties", auth, async (req, res) => {
   }
 });
 
-app.post("/api/admin/properties", auth, async (req, res) => {
+app.post("/api/admin/properties", auth, upload.none(), async (req, res) => {
   const property = req.body || {};
   const listing_type = toListingType(property.listing_type ?? property.category);
   const property_type = toPropertyType(property.property_type ?? property.type);
@@ -470,6 +503,9 @@ app.post("/api/admin/properties", auth, async (req, res) => {
 
   if (!listing_type) {
     return res.status(400).json({ success: false, message: "Missing: listing_type" });
+  }
+  if (!["sale", "rent"].includes(listing_type)) {
+    return res.status(400).json({ success: false, message: "Invalid: listing_type" });
   }
   if (!title) {
     return res.status(400).json({ success: false, message: "Missing: title" });
@@ -481,9 +517,9 @@ app.post("/api/admin/properties", auth, async (req, res) => {
   const bedrooms = Number(property.bedrooms ?? property.beds ?? 0);
   const bathrooms = Number(property.bathrooms ?? property.baths ?? 0);
   const area = Number(property.area ?? property.area_sqft ?? 0);
-  const images = JSON.stringify(Array.isArray(property.images) ? property.images : []);
-  const amenities = JSON.stringify(Array.isArray(property.amenities) ? property.amenities : []);
-  const featured = property.featured ? 1 : 0;
+  const images = JSON.stringify(parseStringArray(property.images));
+  const amenities = JSON.stringify(parseStringArray(property.amenities));
+  const featured = toFeaturedFlag(property.featured);
   const price = Number(property.price ?? 0);
   const id = property.id ? Number(property.id) : null;
 

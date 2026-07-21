@@ -66,6 +66,38 @@ const emptyProject: Partial<Project> = {
 
 const isImageFile = (f: File) => /^image\//.test(f.type);
 
+function createPropertyFormData(propForm: Partial<Property>, mode: Mode) {
+  const form = new FormData();
+  const listingType = mode === "rent" ? "rent" : "sale";
+  const amenities =
+    typeof (propForm as any).amenities === "string"
+      ? String((propForm as any).amenities)
+          .split(",")
+          .map((value) => value.trim())
+          .filter(Boolean)
+      : Array.isArray(propForm.amenities)
+      ? propForm.amenities
+      : [];
+  const images = Array.isArray(propForm.images) ? propForm.images : [];
+
+  if (propForm.id != null) form.append("id", String(propForm.id));
+  form.append("listing_type", listingType);
+  form.append("title", String(propForm.title ?? "").trim());
+  form.append("location", String(propForm.location ?? "").trim());
+  form.append("type", String(propForm.property_type ?? "apartment"));
+  form.append("status", String(propForm.status ?? "available"));
+  form.append("price", String(Number(propForm.price || 0)));
+  form.append("beds", String(Number((propForm as any).beds ?? (propForm as any).bedrooms ?? 0)));
+  form.append("baths", String(Number((propForm as any).baths ?? (propForm as any).bathrooms ?? 0)));
+  form.append("area", String(Number((propForm as any).area_sqft ?? (propForm as any).area ?? 0)));
+  form.append("amenities", JSON.stringify(amenities));
+  form.append("description", String(propForm.description ?? ""));
+  form.append("featured", propForm.featured ? "1" : "0");
+  images.forEach((image) => form.append("images", image));
+
+  return form;
+}
+
 export default function Admin() {
   const [token, setToken] = useState<string | null>(() => localStorage.getItem(TOKEN_KEY));
   const [username, setUsername] = useState("");
@@ -202,42 +234,8 @@ export default function Admin() {
 
       if (!propForm.title || !String(propForm.title).trim()) return alert("Missing: title");
       if (!propForm.location || !String(propForm.location).trim()) return alert("Missing: location");
-
-      const amenitiesArr =
-        typeof (propForm as any).amenities === "string"
-          ? String((propForm as any).amenities)
-              .split(",")
-              .map((s) => s.trim())
-              .filter(Boolean)
-          : Array.isArray(propForm.amenities)
-          ? propForm.amenities
-          : [];
-
-      const payload: any = {
-        ...propForm,
-
-        // ✅ MUST send this
-        listing_type: mode,
-
-        // ✅ extra-safe: backend accepts category too
-        category: mode === "rent" ? "rent" : "buy",
-
-        // normalize numeric
-        price: Number(propForm.price || 0),
-        beds: Number((propForm as any).beds ?? (propForm as any).bedrooms ?? 0),
-        baths: Number((propForm as any).baths ?? (propForm as any).bathrooms ?? 0),
-        area_sqft: Number((propForm as any).area_sqft ?? (propForm as any).area ?? 0),
-
-        // arrays
-        images: Array.isArray(propForm.images) ? propForm.images : [],
-        amenities: amenitiesArr,
-
-        featured: !!propForm.featured,
-        status: (propForm.status as any) || "available",
-        property_type: (propForm.property_type as any) || "apartment",
-      };
-
-      await api.adminUpsertProperty(token, payload);
+      const form = createPropertyFormData(propForm, mode);
+      await api.adminUpsertProperty(token, form);
 
       setPropForm(emptyProperty(mode));
       await loadData();

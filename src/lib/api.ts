@@ -111,8 +111,12 @@ async function parseJsonResponse<T>(res: Response): Promise<T> {
 }
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const isFormData = init?.body instanceof FormData;
   const res = await fetch(createApiUrl(path), {
-    headers: { "Content-Type": "application/json", ...(init?.headers || {}) },
+    headers: {
+      ...(isFormData ? {} : { "Content-Type": "application/json" }),
+      ...(init?.headers || {}),
+    },
     ...init,
   });
   if (!res.ok) {
@@ -184,11 +188,11 @@ export const api = {
     });
   },
 
-  adminUpsertProperty: (token: string, payload: Partial<Property>) =>
+  adminUpsertProperty: (token: string, payload: Partial<Property> | FormData) =>
     apiFetch<{ ok: true; id: number }>(`/api/admin/properties`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },
-      body: JSON.stringify(payload),
+      body: payload instanceof FormData ? payload : JSON.stringify(payload),
     }),
 
   adminDeleteProperty: (token: string, id: number) =>
