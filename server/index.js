@@ -20,6 +20,7 @@ const CORS_ORIGIN = (
   .map((value) => value.trim())
   .filter(Boolean);
 const IS_PRODUCTION = process.env.NODE_ENV === "production";
+const IS_VERCEL = Boolean(process.env.VERCEL);
 
 const app = express();
 
@@ -41,13 +42,35 @@ app.use(
 // -----------------------------
 // Uploads (serve uploaded images)
 // -----------------------------
-const UPLOAD_DIR = path.join(__dirname, "uploads");
-if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-// Vercel serverless storage is ephemeral. This preserves local uploads but is not permanent in production.
+const UPLOAD_DIR = IS_VERCEL
+  ? path.join("/tmp", "chaitra-uploads")
+  : path.join(__dirname, "uploads");
+let uploadDirectoryError = null;
+
+try {
+  if (!fs.existsSync(UPLOAD_DIR)) {
+    fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+  }
+} catch (error) {
+  uploadDirectoryError = error;
+  console.error("Unable to initialize upload directory", {
+    name: error?.name,
+    code: error?.code,
+    message: error?.message,
+  });
+}
+
+// Vercel /tmp storage is ephemeral. Permanent production uploads still need external object storage.
 app.use("/uploads", express.static(UPLOAD_DIR));
 
 const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
+  destination: (_req, _file, cb) => {
+    if (uploadDirectoryError) {
+      cb(new Error("Upload storage is not available"), UPLOAD_DIR);
+      return;
+    }
+    cb(null, UPLOAD_DIR);
+  },
   filename: (_req, file, cb) => {
     const ext = path.extname(file.originalname || "").toLowerCase() || ".jpg";
     const safeExt = [".jpg", ".jpeg", ".png", ".webp"].includes(ext) ? ext : ".jpg";
@@ -396,6 +419,13 @@ app.post("/api/admin/login", async (req, res) => {
 
 app.post("/api/admin/upload", auth, upload.array("images", 10), async (req, res) => {
   try {
+    if (uploadDirectoryError) {
+      return res.status(503).json({
+        success: false,
+        message: "Upload storage is not available on the server",
+      });
+    }
+
     const files = Array.isArray(req.files) ? req.files : [];
     if (!files.length) {
       return res.status(400).json({ success: false, message: "No files uploaded" });
