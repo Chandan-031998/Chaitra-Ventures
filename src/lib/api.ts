@@ -53,12 +53,18 @@ export const API_BASE_URL =
   import.meta.env.VITE_API_URL ||
   (import.meta.env.DEV ? "http://localhost:5001" : "");
 
+const CONFIGURATION_ERROR =
+  "Frontend API is not configured. Set VITE_API_URL to your backend URL.";
+
 function joinUrl(base: string, path: string) {
   if (!base) return path;
   return `${base.replace(/\/$/, "")}/${path.replace(/^\//, "")}`;
 }
 
 export function buildApiUrl(path: string) {
+  if (!API_BASE_URL && !import.meta.env.DEV) {
+    throw new Error(CONFIGURATION_ERROR);
+  }
   return joinUrl(API_BASE_URL, path);
 }
 
@@ -68,16 +74,44 @@ export function buildUploadUrl(path: string) {
   return joinUrl(API_BASE_URL, path);
 }
 
+function isJsonResponse(contentType: string | null) {
+  return Boolean(contentType && contentType.toLowerCase().includes("application/json"));
+}
+
+async function readErrorMessage(res: Response) {
+  const contentType = res.headers.get("content-type");
+
+  if (!isJsonResponse(contentType)) {
+    return "The frontend reached an HTML page instead of the API. Check VITE_API_URL and Vercel routing.";
+  }
+
+  const payload = await res.json().catch(() => null);
+  if (payload && typeof payload.message === "string") return payload.message;
+  if (payload && typeof payload.error === "string") return payload.error;
+  return `Request failed: ${res.status}`;
+}
+
+async function parseJsonResponse<T>(res: Response): Promise<T> {
+  const contentType = res.headers.get("content-type");
+
+  if (!isJsonResponse(contentType)) {
+    throw new Error(
+      "The frontend reached an HTML page instead of the API. Check VITE_API_URL and Vercel routing."
+    );
+  }
+
+  return (await res.json()) as T;
+}
+
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(buildApiUrl(path), {
     headers: { "Content-Type": "application/json", ...(init?.headers || {}) },
     ...init,
   });
   if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(text || `Request failed: ${res.status}`);
+    throw new Error(await readErrorMessage(res));
   }
-  return (await res.json()) as T;
+  return parseJsonResponse<T>(res);
 }
 
 async function apiUpload(path: string, token: string, form: FormData) {
@@ -87,10 +121,9 @@ async function apiUpload(path: string, token: string, form: FormData) {
     body: form,
   });
   if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(text || `Upload failed: ${res.status}`);
+    throw new Error(await readErrorMessage(res));
   }
-  return (await res.json()) as { urls: string[] };
+  return parseJsonResponse<{ urls: string[] }>(res);
 }
 
 export const api = {

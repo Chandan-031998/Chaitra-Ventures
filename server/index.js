@@ -619,9 +619,7 @@ app.use((error, _req, res, next) => {
 });
 
 if (require.main === module) {
-  app.listen(PORT, () => {
-    console.log(`API running locally on http://localhost:${PORT}`);
-  });
+  app.listen(process.env.PORT || 5001);
 }
 
 module.exports = app;

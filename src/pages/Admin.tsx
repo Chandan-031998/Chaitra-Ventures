@@ -1,7 +1,7 @@
 // src/pages/Admin.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import { LogOut, Plus, Trash2, Edit3, Building2, FolderKanban } from "lucide-react";
-import { buildApiUrl } from "../lib/api";
+import { api } from "../lib/api";
 
 const TOKEN_KEY = "chaitra_admin_token";
 
@@ -66,42 +66,6 @@ const emptyProject: Partial<Project> = {
 
 const isImageFile = (f: File) => /^image\//.test(f.type);
 
-async function apiJson<T>(url: string, opts: RequestInit = {}, token?: string) {
-  const res = await fetch(buildApiUrl(url), {
-    ...opts,
-    headers: {
-      ...(opts.headers || {}),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      "Content-Type": "application/json",
-    },
-  });
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(text || `Request failed (${res.status})`);
-  }
-  return (await res.json()) as T;
-}
-
-async function apiUploadImages(url: string, files: File[], token: string) {
-  const fd = new FormData();
-  files.forEach((f) => fd.append("images", f));
-
-  const res = await fetch(buildApiUrl(url), {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-    body: fd,
-  });
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(text || `Upload failed (${res.status})`);
-  }
-  return (await res.json()) as { urls: string[] };
-}
-
 export default function Admin() {
   const [token, setToken] = useState<string | null>(() => localStorage.getItem(TOKEN_KEY));
   const [username, setUsername] = useState("");
@@ -152,14 +116,10 @@ export default function Admin() {
     try {
       setLoading(true);
       if (tab === "properties") {
-        const data = await apiJson<Property[]>(
-          `/api/admin/properties?listing_type=${encodeURIComponent(mode)}`,
-          { method: "GET" },
-          token
-        );
+        const data = await api.adminListProperties(token, mode);
         setProperties(data || []);
       } else {
-        const data = await apiJson<Project[]>(`/api/admin/projects`, { method: "GET" }, token);
+        const data = await api.adminListProjects(token);
         setProjects(data || []);
       }
     } catch (e: any) {
@@ -185,10 +145,7 @@ export default function Admin() {
     setLoginError(null);
     setLoading(true);
     try {
-      const res = await apiJson<{ token: string }>(`/api/admin/login`, {
-        method: "POST",
-        body: JSON.stringify({ username, password }),
-      });
+      const res = await api.adminLogin(username, password);
       localStorage.setItem(TOKEN_KEY, res.token);
       setToken(res.token);
     } catch (err: any) {
@@ -207,7 +164,7 @@ export default function Admin() {
     }
     try {
       setLoading(true);
-      const res = await apiUploadImages(`/api/admin/upload`, valid, token);
+      const res = await api.adminUploadImages(token, valid);
       setPropForm((prev) => ({
         ...prev,
         images: [...(Array.isArray(prev.images) ? prev.images : []), ...(res.urls || [])],
@@ -228,7 +185,7 @@ export default function Admin() {
     }
     try {
       setLoading(true);
-      const res = await apiUploadImages(`/api/admin/upload`, [file], token);
+      const res = await api.adminUploadImages(token, [file]);
       setProjForm((prev) => ({ ...prev, image: res.urls?.[0] || prev.image }));
     } catch (e: any) {
       console.error(e);
@@ -280,10 +237,7 @@ export default function Admin() {
         property_type: (propForm.property_type as any) || "apartment",
       };
 
-      await apiJson(`/api/admin/properties`, {
-        method: "POST",
-        body: JSON.stringify(payload),
-      }, token);
+      await api.adminUpsertProperty(token, payload);
 
       setPropForm(emptyProperty(mode));
       await loadData();
@@ -300,7 +254,7 @@ export default function Admin() {
     if (!confirm("Delete this property?")) return;
     try {
       setLoading(true);
-      await apiJson(`/api/admin/properties/${id}`, { method: "DELETE" }, token);
+      await api.adminDeleteProperty(token, id);
       await loadData();
     } catch (e: any) {
       console.error(e);
@@ -343,10 +297,7 @@ export default function Admin() {
         units: Number(projForm.units || 0),
       };
 
-      await apiJson(`/api/admin/projects`, {
-        method: "POST",
-        body: JSON.stringify(payload),
-      }, token);
+      await api.adminUpsertProject(token, payload);
 
       setProjForm({ ...emptyProject });
       await loadData();
@@ -363,7 +314,7 @@ export default function Admin() {
     if (!confirm("Delete this project?")) return;
     try {
       setLoading(true);
-      await apiJson(`/api/admin/projects/${id}`, { method: "DELETE" }, token);
+      await api.adminDeleteProject(token, id);
       await loadData();
     } catch (e: any) {
       console.error(e);
