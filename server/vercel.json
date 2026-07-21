@@ -3,10 +3,7 @@
   "functions": {
     "api/index.js": {
       "maxDuration": 30,
-      "includeFiles": [
-        "index.js",
-        "package.json"
-      ]
+      "includeFiles": "index.js"
     }
   },
   "rewrites": [
