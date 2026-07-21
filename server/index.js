@@ -77,7 +77,8 @@ function ensureUploadDirectory() {
 
 ensureUploadDirectory();
 
-// Vercel /tmp storage is ephemeral. Permanent production uploads still need external object storage.
+// Vercel /tmp storage is ephemeral.
+// Permanent production uploads still need external object storage.
 app.use("/uploads", express.static(UPLOAD_DIR));
 
 const storage = multer.diskStorage({
