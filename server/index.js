@@ -24,6 +24,8 @@ const IS_PRODUCTION = process.env.NODE_ENV === "production";
 
 const app = express();
 
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true }));
 app.use(
   cors({
     origin(origin, callback) {
@@ -36,14 +38,13 @@ app.use(
     credentials: true,
   })
 );
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: true }));
 
 // -----------------------------
 // Uploads (serve uploaded images)
 // -----------------------------
 const UPLOAD_DIR = path.join(__dirname, "uploads");
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+// Vercel serverless storage is ephemeral. This preserves local uploads but is not permanent in production.
 app.use("/uploads", express.static(UPLOAD_DIR));
 
 const storage = multer.diskStorage({
@@ -593,6 +594,14 @@ app.delete("/api/admin/projects/:id", auth, async (req, res) => {
   }
 });
 
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    message: "API route not found",
+    path: req.originalUrl,
+  });
+});
+
 app.use((error, _req, res, next) => {
   if (!error) {
     next();
@@ -617,9 +626,5 @@ app.use((error, _req, res, next) => {
 
   sendServerError(res, "unhandled", error);
 });
-
-if (require.main === module) {
-  app.listen(process.env.PORT || 5001);
-}
 
 module.exports = app;
