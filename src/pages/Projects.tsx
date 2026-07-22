@@ -1,7 +1,10 @@
 
 import { useEffect, useState } from 'react';
 import { MapPin, Calendar } from 'lucide-react';
-import { api, Project } from '../lib/api';
+import { api, Project, resolveImageUrl } from '../lib/api';
+
+const FALLBACK_PROJECT_IMAGE =
+  'https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg?auto=compress&cs=tinysrgb&w=1200';
 
 const Projects = () => {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -46,7 +49,7 @@ const Projects = () => {
               >
                 <div className="relative h-64">
                   <img
-                    src={project.image}
+                    src={resolveImageUrl(project.image as any) || FALLBACK_PROJECT_IMAGE}
                     alt={project.name}
                     className="w-full h-full object-cover"
                   />

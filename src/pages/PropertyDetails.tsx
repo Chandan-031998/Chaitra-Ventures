@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { MapPin, Bed, Bath, Maximize, Share2, Heart, Check } from 'lucide-react';
-import { api, Property, Enquiry } from '../lib/api';
+import { api, Property, Enquiry, resolveImageUrl } from '../lib/api';
 
 const PropertyDetails = () => {
   const { id } = useParams<{ id: string }>();
@@ -88,7 +88,7 @@ const PropertyDetails = () => {
 
   const images =
     property.images && property.images.length > 0
-      ? property.images
+      ? property.images.map((image) => resolveImageUrl(image as any))
       : ['https://images.pexels.com/photos/106399/pexels-photo-106399.jpeg?auto=compress&cs=tinysrgb&w=1200'];
 
   return (

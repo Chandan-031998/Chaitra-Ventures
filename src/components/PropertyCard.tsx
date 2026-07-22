@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { MapPin, Bed, Bath, Maximize } from 'lucide-react';
-import { Property } from '../lib/api';
+import { Property, resolveImageUrl } from '../lib/api';
 import { getPropertyTypeLabel } from '../lib/propertyTypes';
 
 interface PropertyCardProps {
@@ -17,7 +17,7 @@ const PropertyCard = ({ property }: PropertyCardProps) => {
   };
 
   const primaryImage = property.images && property.images.length > 0
-    ? property.images[0]
+    ? resolveImageUrl(property.images[0] as any)
     : 'https://images.pexels.com/photos/106399/pexels-photo-106399.jpeg?auto=compress&cs=tinysrgb&w=800';
 
   return (

@@ -7,6 +7,14 @@ const mysql = require("mysql2/promise");
 const path = require("path");
 const fs = require("fs");
 const multer = require("multer");
+const { hasCloudinaryConfiguration } = require("./config/cloudinary");
+const {
+  uploadManyImages,
+  deleteCloudinaryImage,
+  deleteManyCloudinaryImages,
+  normalizeStoredImage,
+  normalizeStoredImages,
+} = require("./services/cloudinaryImageService");
 require("dotenv").config();
 
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -36,7 +44,7 @@ const CORS_ORIGIN = parseCorsOrigins(
     "http://localhost:5173,https://chaitraventures.vertexsoftware.in,https://chairaventures.vertexsoftware.in"
 );
 const IS_PRODUCTION = process.env.NODE_ENV === "production";
-const IS_VERCEL = Boolean(process.env.VERCEL);
+const LEGACY_UPLOADS_ROOT = () => path.resolve(__dirname, "uploads");
 
 const app = express();
 app.set("trust proxy", true);
@@ -57,71 +65,29 @@ app.use(
 );
 
 // -----------------------------
-// Uploads (serve uploaded images)
+// Legacy uploads (read-only compatibility during migration)
 // -----------------------------
-const UPLOAD_DIR = IS_VERCEL
-  ? path.join("/tmp", "chaitra-uploads")
-  : path.join(__dirname, "uploads");
-let uploadDirectoryReady = false;
-let uploadDirectoryError = null;
-
-function ensureUploadDirectory() {
-  try {
-    if (!fs.existsSync(UPLOAD_DIR)) {
-      fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-    }
-    uploadDirectoryReady = true;
-    uploadDirectoryError = null;
-    return true;
-  } catch (error) {
-    uploadDirectoryReady = false;
-    uploadDirectoryError = error;
-    console.error("Upload directory initialization failed", {
-      name: error?.name,
-      code: error?.code,
-      message: error?.message,
-      stack: error?.stack,
-    });
-    return false;
-  }
-}
-
-ensureUploadDirectory();
-
-// Vercel /tmp storage is ephemeral.
-// Permanent production uploads still need external object storage.
-app.use("/uploads", express.static(UPLOAD_DIR));
-
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    if (!ensureUploadDirectory()) {
-      cb(new Error("Upload storage is temporarily unavailable"), UPLOAD_DIR);
-      return;
-    }
-    cb(null, UPLOAD_DIR);
+const uploadFiles = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024,
+    files: 10,
   },
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname || "").toLowerCase() || ".jpg";
-    const safeExt = [".jpg", ".jpeg", ".png", ".webp", ".svg"].includes(ext) ? ext : ".jpg";
-    const name = `img_${Date.now()}_${Math.random().toString(16).slice(2)}${safeExt}`;
-    cb(null, name);
-  },
-});
-
-const upload = multer({
-  storage,
-  limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
-    const allowed = /image\/(jpeg|png|webp|svg\+xml)/.test(file.mimetype);
-    cb(allowed ? null : new Error("Only JPG/PNG/WEBP/SVG images are allowed"), allowed);
+    const allowedMimeTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
+    if (!allowedMimeTypes.has(file.mimetype)) {
+      return cb(new Error("Only JPG, PNG and WebP images are allowed"));
+    }
+    return cb(null, true);
   },
 });
+
+const formUpload = multer();
 
 // -----------------------------
 // MySQL Pool
 // -----------------------------
 let pool = null;
-
 function isDatabaseConfigured() {
   return Boolean(DB_HOST && DB_USER && DB_NAME);
 }
@@ -150,7 +116,6 @@ function getPool() {
 
   return pool;
 }
-
 // -----------------------------
 // Helpers
 // -----------------------------
@@ -159,6 +124,14 @@ const ok = (res, data) => res.json(data);
 function logServerError(scope, error) {
   const message = error instanceof Error ? error.message : String(error);
   console.error(`[${scope}] ${message}`);
+}
+
+function logSafeError(scope, error) {
+  console.error(`[${scope}]`, {
+    name: error?.name,
+    code: error?.code,
+    message: error?.message,
+  });
 }
 
 function sendServerError(res, scope, error) {
@@ -215,6 +188,13 @@ function asJsonArray(value) {
   }
 
   return [];
+}
+
+function cloudinaryConfigurationResponse(res) {
+  return res.status(503).json({
+    success: false,
+    message: "Cloudinary is not configured on the server",
+  });
 }
 
 function normEnum(value) {
@@ -295,6 +275,10 @@ function parseStringArray(value) {
   return [];
 }
 
+function normalizeAmenityArray(value) {
+  return parseStringArray(value);
+}
+
 function toFeaturedFlag(value) {
   if (typeof value === "string") {
     const normalized = value.trim().toLowerCase();
@@ -314,6 +298,28 @@ function titleCase(value) {
         .map((part) => (part ? part.charAt(0).toUpperCase() + part.slice(1) : part))
         .join(" ")
     : text;
+}
+
+function normalizeLegacyImagePath(value) {
+  if (!value) return "";
+
+  if (/^https?:\/\//i.test(value)) {
+    try {
+      const url = new URL(value);
+      if (url.pathname.startsWith("/uploads/")) {
+        url.pathname = `/api${url.pathname}`;
+      }
+      return url.toString();
+    } catch {
+      return value;
+    }
+  }
+
+  if (value.startsWith("/api/uploads/") || value.startsWith("/uploads/")) {
+    return value;
+  }
+
+  return `/uploads/${value.replace(/^\/+/, "")}`;
 }
 
 function publicBase(req) {
@@ -349,12 +355,91 @@ function toPublicUrl(req, url) {
   return `${base}${normalizedPath.startsWith("/") ? "" : "/"}${normalizedPath}`;
 }
 
+function toResponseImage(req, image) {
+  if (!image) return null;
+
+  const normalized = normalizeStoredImage(image);
+  if (!normalized) return null;
+
+  if (normalized.source === "cloudinary") {
+    const url = normalized.secure_url || normalized.url;
+    return {
+      ...normalized,
+      url,
+      secure_url: url,
+    };
+  }
+
+  const normalizedPath = normalizeLegacyImagePath(normalized.url);
+  const absoluteUrl = toPublicUrl(req, normalizedPath);
+  return {
+    ...normalized,
+    url: absoluteUrl,
+    secure_url: absoluteUrl,
+  };
+}
+
+function serializeImagesForStorage(images) {
+  return images.map((image) => {
+    const normalized = normalizeStoredImage(image);
+    if (!normalized) return null;
+
+    return {
+      url: normalized.secure_url || normalized.url,
+      public_id: normalized.public_id || null,
+      width: normalized.width ?? null,
+      height: normalized.height ?? null,
+      format: normalized.format ?? null,
+    };
+  }).filter(Boolean);
+}
+
+function imageIdentity(image) {
+  const normalized = normalizeStoredImage(image);
+  if (!normalized) return "";
+  return normalized.public_id || normalized.url || "";
+}
+
+function splitImageChanges(existingImages, incomingImages) {
+  const existingByIdentity = new Map(existingImages.map((image) => [imageIdentity(image), image]));
+  const incomingByIdentity = new Map(incomingImages.map((image) => [imageIdentity(image), image]));
+
+  const retained = incomingImages.filter((image) => existingByIdentity.has(imageIdentity(image)));
+  const added = incomingImages.filter((image) => !existingByIdentity.has(imageIdentity(image)));
+  const removed = existingImages.filter((image) => !incomingByIdentity.has(imageIdentity(image)));
+
+  return { retained, added, removed };
+}
+
+function normalizeProjectImageForStorage(value) {
+  const normalized = normalizeStoredImage(value);
+  if (!normalized) return "";
+
+  return JSON.stringify({
+    url: normalized.secure_url || normalized.url,
+    public_id: normalized.public_id || null,
+    width: normalized.width ?? null,
+    height: normalized.height ?? null,
+    format: normalized.format ?? null,
+  });
+}
+
+function rowToProject(req, row) {
+  const image = toResponseImage(req, row.image);
+  return {
+    ...row,
+    image: image || "",
+  };
+}
+
 function rowToProperty(req, row) {
   const listing_type = row.listing_type;
   const property_type = row.property_type;
   const status = row.status;
 
-  const images = asJsonArray(row.images).map((url) => toPublicUrl(req, url));
+  const images = normalizeStoredImages(row.images)
+    .map((image) => toResponseImage(req, image))
+    .filter(Boolean);
   const amenities = asJsonArray(row.amenities);
 
   return {
@@ -500,7 +585,7 @@ app.get("/api/properties/:id", async (req, res) => {
 app.get("/api/projects", async (_req, res) => {
   try {
     const [rows] = await getPool().query("SELECT * FROM projects ORDER BY created_at DESC");
-    ok(res, rows);
+    ok(res, rows.map((row) => rowToProject(_req, row)));
   } catch (error) {
     sendServerError(res, "list-projects", error);
   }
@@ -552,13 +637,10 @@ app.post("/api/admin/login", async (req, res) => {
   ok(res, { token });
 });
 
-app.post("/api/admin/upload", auth, upload.array("images", 10), async (req, res) => {
+app.post("/api/admin/upload", auth, uploadFiles.array("images", 10), async (req, res) => {
   try {
-    if (!uploadDirectoryReady || uploadDirectoryError) {
-      return res.status(503).json({
-        success: false,
-        message: "Upload storage is not available on the server",
-      });
+    if (!hasCloudinaryConfiguration()) {
+      return cloudinaryConfigurationResponse(res);
     }
 
     const files = Array.isArray(req.files) ? req.files : [];
@@ -566,8 +648,17 @@ app.post("/api/admin/upload", auth, upload.array("images", 10), async (req, res)
       return res.status(400).json({ success: false, message: "No files uploaded" });
     }
 
-    const urls = files.map((file) => toPublicUrl(req, `/api/uploads/${file.filename}`));
-    ok(res, { urls });
+    const folderKind = String(req.body?.kind || "properties").trim().toLowerCase();
+    const folder =
+      folderKind === "projects"
+        ? "chaitra-ventures/projects"
+        : "chaitra-ventures/properties";
+    const images = await uploadManyImages(files, { folder });
+
+    ok(res, {
+      urls: images.map((image) => image.secure_url || image.url),
+      images,
+    });
   } catch (error) {
     sendServerError(res, "admin-upload", error);
   }
@@ -575,7 +666,7 @@ app.post("/api/admin/upload", auth, upload.array("images", 10), async (req, res)
 
 function sendUploadedFile(req, res) {
   const filename = path.basename(String(req.params.filename || ""));
-  const filePath = path.join(UPLOAD_DIR, filename);
+  const filePath = path.join(LEGACY_UPLOADS_ROOT(), filename);
 
   if (!filename) {
     return res.status(400).json({ success: false, message: "Missing filename" });
@@ -617,7 +708,7 @@ app.get("/api/admin/properties", auth, async (req, res) => {
   }
 });
 
-app.post("/api/admin/properties", auth, upload.none(), async (req, res) => {
+app.post("/api/admin/properties", auth, formUpload.none(), async (req, res) => {
   const property = req.body || {};
   const listing_type = toListingType(property.listing_type ?? property.category);
   const property_type = toPropertyType(property.property_type ?? property.type);
@@ -641,18 +732,62 @@ app.post("/api/admin/properties", auth, upload.none(), async (req, res) => {
   const bedrooms = Number(property.bedrooms ?? property.beds ?? 0);
   const bathrooms = Number(property.bathrooms ?? property.baths ?? 0);
   const area = Number(property.area ?? property.area_sqft ?? 0);
-  const images = JSON.stringify(parseStringArray(property.images));
   const amenities = JSON.stringify(parseStringArray(property.amenities));
   const featured = toFeaturedFlag(property.featured);
   const price = Number(property.price ?? 0);
   const id = property.id ? Number(property.id) : null;
+  const incomingImages = normalizeStoredImages(property.images);
 
   try {
+    let existingRow = null;
+    let existingImages = [];
+    if (id) {
+      const [rows] = await getPool().query("SELECT * FROM properties WHERE id = ? LIMIT 1", [id]);
+      existingRow = rows?.[0] || null;
+      if (!existingRow) {
+        return res.status(404).json({ success: false, message: "Property not found" });
+      }
+      existingImages = normalizeStoredImages(existingRow.images);
+    }
+
+    const { added, removed } = splitImageChanges(existingImages, incomingImages);
+    const storedImages = JSON.stringify(serializeImagesForStorage(incomingImages));
+
     if (!id) {
-      const [result] = await getPool().query(
-        `INSERT INTO properties
-          (title, description, price, listing_type, property_type, location, bedrooms, bathrooms, area, images, amenities, featured, status)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      try {
+        const [result] = await getPool().query(
+          `INSERT INTO properties
+            (title, description, price, listing_type, property_type, location, bedrooms, bathrooms, area, images, amenities, featured, status)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          [
+            title,
+            String(property.description ?? ""),
+            price,
+            listing_type,
+            property_type,
+            location,
+            bedrooms,
+            bathrooms,
+            area,
+            storedImages,
+            amenities,
+            featured,
+            status,
+          ]
+        );
+        return ok(res, { ok: true, id: result.insertId });
+      } catch (error) {
+        await deleteManyCloudinaryImages(added);
+        throw error;
+      }
+    }
+
+    try {
+      await getPool().query(
+        `UPDATE properties SET
+          title=?, description=?, price=?, listing_type=?, property_type=?, location=?,
+          bedrooms=?, bathrooms=?, area=?, images=?, amenities=?, featured=?, status=?
+         WHERE id=?`,
         [
           title,
           String(property.description ?? ""),
@@ -663,38 +798,19 @@ app.post("/api/admin/properties", auth, upload.none(), async (req, res) => {
           bedrooms,
           bathrooms,
           area,
-          images,
+          storedImages,
           amenities,
           featured,
           status,
+          id,
         ]
       );
-      return ok(res, { ok: true, id: result.insertId });
+    } catch (error) {
+      await deleteManyCloudinaryImages(added);
+      throw error;
     }
 
-    await getPool().query(
-      `UPDATE properties SET
-        title=?, description=?, price=?, listing_type=?, property_type=?, location=?,
-        bedrooms=?, bathrooms=?, area=?, images=?, amenities=?, featured=?, status=?
-       WHERE id=?`,
-      [
-        title,
-        String(property.description ?? ""),
-        price,
-        listing_type,
-        property_type,
-        location,
-        bedrooms,
-        bathrooms,
-        area,
-        images,
-        amenities,
-        featured,
-        status,
-        id,
-      ]
-    );
-
+    await deleteManyCloudinaryImages(removed);
     ok(res, { ok: true, id });
   } catch (error) {
     sendServerError(res, "admin-upsert-property", error);
@@ -705,7 +821,15 @@ app.delete("/api/admin/properties/:id", auth, async (req, res) => {
   const id = Number(req.params.id);
 
   try {
+    const [rows] = await getPool().query("SELECT * FROM properties WHERE id = ? LIMIT 1", [id]);
+    const row = rows?.[0];
+    if (!row) {
+      return res.status(404).json({ success: false, message: "Property not found" });
+    }
+
+    const images = normalizeStoredImages(row.images);
     await getPool().query("DELETE FROM properties WHERE id = ?", [id]);
+    await deleteManyCloudinaryImages(images);
     ok(res, { ok: true });
   } catch (error) {
     sendServerError(res, "admin-delete-property", error);
@@ -715,7 +839,7 @@ app.delete("/api/admin/properties/:id", auth, async (req, res) => {
 app.get("/api/admin/projects", auth, async (_req, res) => {
   try {
     const [rows] = await getPool().query("SELECT * FROM projects ORDER BY created_at DESC");
-    ok(res, rows);
+    ok(res, rows.map((row) => rowToProject(_req, row)));
   } catch (error) {
     sendServerError(res, "admin-list-projects", error);
   }
@@ -723,7 +847,7 @@ app.get("/api/admin/projects", auth, async (_req, res) => {
 
 app.post("/api/admin/projects", auth, async (req, res) => {
   const project = req.body || {};
-  const required = ["name", "location", "image", "status", "completion_year", "type", "description"];
+  const required = ["name", "location", "status", "completion_year", "type", "description"];
 
   for (const field of required) {
     if (project[field] == null || project[field] === "") {
@@ -732,40 +856,89 @@ app.post("/api/admin/projects", auth, async (req, res) => {
   }
 
   const id = project.id ? Number(project.id) : null;
+  const incomingImage = normalizeStoredImage(project.image);
+  const storedImage = normalizeProjectImageForStorage(project.image);
+
+  if (!id && !incomingImage) {
+    return res.status(400).json({ success: false, message: "Missing: image" });
+  }
 
   try {
+    let existingImage = null;
+    if (id) {
+      const [rows] = await getPool().query("SELECT * FROM projects WHERE id = ? LIMIT 1", [id]);
+      const existingProject = rows?.[0] || null;
+      if (!existingProject) {
+        return res.status(404).json({ success: false, message: "Project not found" });
+      }
+      existingImage = normalizeStoredImage(existingProject.image);
+    }
+
     if (!id) {
-      const [result] = await getPool().query(
-        `INSERT INTO projects (name, location, image, status, completion_year, units, type, description)
-         VALUES (?,?,?,?,?,?,?,?)`,
+      try {
+        const [result] = await getPool().query(
+          `INSERT INTO projects (name, location, image, status, completion_year, units, type, description)
+           VALUES (?,?,?,?,?,?,?,?)`,
+          [
+            String(project.name),
+            String(project.location),
+            storedImage,
+            String(project.status),
+            String(project.completion_year),
+            Number(project.units || 0),
+            String(project.type),
+            String(project.description),
+          ]
+        );
+        return ok(res, { ok: true, id: result.insertId });
+      } catch (error) {
+        if (incomingImage?.public_id) {
+          try {
+            await deleteCloudinaryImage(incomingImage.public_id);
+          } catch (cleanupError) {
+            logSafeError("project-create-cleanup", cleanupError);
+          }
+        }
+        throw error;
+      }
+    }
+
+    const imageChanged = imageIdentity(existingImage) !== imageIdentity(incomingImage);
+
+    try {
+      await getPool().query(
+        `UPDATE projects SET name=?, location=?, image=?, status=?, completion_year=?, units=?, type=?, description=? WHERE id=?`,
         [
           String(project.name),
           String(project.location),
-          String(project.image),
+          storedImage,
           String(project.status),
           String(project.completion_year),
           Number(project.units || 0),
           String(project.type),
           String(project.description),
+          id,
         ]
       );
-      return ok(res, { ok: true, id: result.insertId });
+    } catch (error) {
+      if (imageChanged && incomingImage?.public_id) {
+        try {
+          await deleteCloudinaryImage(incomingImage.public_id);
+        } catch (cleanupError) {
+          logSafeError("project-update-cleanup", cleanupError);
+        }
+      }
+      throw error;
     }
 
-    await getPool().query(
-      `UPDATE projects SET name=?, location=?, image=?, status=?, completion_year=?, units=?, type=?, description=? WHERE id=?`,
-      [
-        String(project.name),
-        String(project.location),
-        String(project.image),
-        String(project.status),
-        String(project.completion_year),
-        Number(project.units || 0),
-        String(project.type),
-        String(project.description),
-        id,
-      ]
-    );
+    if (imageChanged && existingImage?.public_id) {
+      try {
+        await deleteCloudinaryImage(existingImage.public_id);
+      } catch (cleanupError) {
+        logSafeError("project-remove-old-image", cleanupError);
+      }
+    }
+
     ok(res, { ok: true, id });
   } catch (error) {
     sendServerError(res, "admin-upsert-project", error);
@@ -776,7 +949,21 @@ app.delete("/api/admin/projects/:id", auth, async (req, res) => {
   const id = Number(req.params.id);
 
   try {
+    const [rows] = await getPool().query("SELECT * FROM projects WHERE id = ? LIMIT 1", [id]);
+    const project = rows?.[0];
+    if (!project) {
+      return res.status(404).json({ success: false, message: "Project not found" });
+    }
+
+    const image = normalizeStoredImage(project.image);
     await getPool().query("DELETE FROM projects WHERE id = ?", [id]);
+    if (image?.public_id) {
+      try {
+        await deleteCloudinaryImage(image.public_id);
+      } catch (cleanupError) {
+        logSafeError("project-delete-cleanup", cleanupError);
+      }
+    }
     ok(res, { ok: true });
   } catch (error) {
     sendServerError(res, "admin-delete-project", error);
@@ -804,7 +991,7 @@ app.use((error, _req, res, next) => {
 
   if (
     error.message === "Origin not allowed by CORS" ||
-    error.message === "Only JPG/PNG/WEBP/SVG images are allowed"
+    error.message === "Only JPG, PNG and WebP images are allowed"
   ) {
     res.status(error.message === "Origin not allowed by CORS" ? 403 : 400).json({
       success: false,

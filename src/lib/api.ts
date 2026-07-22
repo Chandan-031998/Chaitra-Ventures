@@ -1,3 +1,13 @@
+export interface StoredImage {
+  url?: string;
+  secure_url?: string;
+  public_id?: string | null;
+  width?: number | null;
+  height?: number | null;
+  format?: string | null;
+  source?: "cloudinary" | "legacy";
+}
+
 export interface Property {
   id: number;
   title: string;
@@ -9,7 +19,7 @@ export interface Property {
   bedrooms: number;
   bathrooms: number;
   area: number;
-  images: string[];
+  images: Array<string | StoredImage>;
   amenities: string[];
   featured: boolean;
   status: 'available' | 'sold' | 'rented';
@@ -20,7 +30,7 @@ export interface Project {
   id: number;
   name: string;
   location: string;
-  image: string;
+  image: string | StoredImage;
   status: string;
   completion_year: string;
   units: number;
@@ -67,6 +77,31 @@ export function buildUploadUrl(path: string) {
   if (!path) return path;
   if (/^https?:\/\//i.test(path)) return path;
   return createApiUrl(path);
+}
+
+export function resolveImageUrl(
+  image:
+    | string
+    | {
+        url?: string;
+        secure_url?: string;
+      }
+): string {
+  const value =
+    typeof image === "string"
+      ? image
+      : image?.secure_url || image?.url || "";
+
+  if (!value) {
+    return "";
+  }
+
+  if (value.startsWith("https://") || value.startsWith("http://")) {
+    return value;
+  }
+
+  const normalizedPath = value.startsWith("/") ? value : `/uploads/${value}`;
+  return createApiUrl(normalizedPath);
 }
 
 function isJsonResponse(contentType: string | null) {
@@ -134,7 +169,7 @@ async function apiUpload(path: string, token: string, form: FormData) {
   if (!res.ok) {
     throw new Error(await readErrorMessage(res));
   }
-  return parseJsonResponse<{ urls: string[] }>(res);
+  return parseJsonResponse<{ urls: string[]; images?: StoredImage[] }>(res);
 }
 
 export const api = {
@@ -219,9 +254,10 @@ export const api = {
       headers: { Authorization: `Bearer ${token}` },
     }),
 
-  adminUploadImages: (token: string, files: File[]) => {
+  adminUploadImages: (token: string, files: File[], kind: "properties" | "projects" = "properties") => {
     const form = new FormData();
     files.forEach((f) => form.append("images", f));
+    form.append("kind", kind);
     return apiUpload(`/api/admin/upload`, token, form);
   },
 };

@@ -1,7 +1,7 @@
 // src/pages/Admin.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import { LogOut, Plus, Trash2, Edit3, Building2, FolderKanban } from "lucide-react";
-import { api } from "../lib/api";
+import { api, resolveImageUrl, type StoredImage } from "../lib/api";
 import { PROPERTY_TYPE_OPTIONS } from "../lib/propertyTypes";
 
 const TOKEN_KEY = "chaitra_admin_token";
@@ -22,7 +22,7 @@ type Property = {
   property_type: string;
   status: "available" | "sold" | "rented";
   featured: boolean;
-  images: string[];
+  images: Array<string | StoredImage>;
   amenities: string[];
 };
 
@@ -30,7 +30,7 @@ type Project = {
   id: number;
   name: string;
   location: string;
-  image: string;
+  image: string | StoredImage;
   status: string;
   completion_year: string;
   units: number;
@@ -94,7 +94,7 @@ function createPropertyFormData(propForm: Partial<Property>, mode: Mode) {
   form.append("amenities", JSON.stringify(amenities));
   form.append("description", String(propForm.description ?? ""));
   form.append("featured", propForm.featured ? "1" : "0");
-  images.forEach((image) => form.append("images", image));
+  form.append("images", JSON.stringify(images));
 
   return form;
 }
@@ -197,10 +197,10 @@ export default function Admin() {
     }
     try {
       setLoading(true);
-      const res = await api.adminUploadImages(token, valid);
+      const res = await api.adminUploadImages(token, valid, "properties");
       setPropForm((prev) => ({
         ...prev,
-        images: [...(Array.isArray(prev.images) ? prev.images : []), ...(res.urls || [])],
+        images: [...(Array.isArray(prev.images) ? prev.images : []), ...((res.images as StoredImage[] | undefined) || res.urls || [])],
       }));
     } catch (e: any) {
       console.error(e);
@@ -218,8 +218,8 @@ export default function Admin() {
     }
     try {
       setLoading(true);
-      const res = await api.adminUploadImages(token, [file]);
-      setProjForm((prev) => ({ ...prev, image: res.urls?.[0] || prev.image }));
+      const res = await api.adminUploadImages(token, [file], "projects");
+      setProjForm((prev) => ({ ...prev, image: res.images?.[0] || res.urls?.[0] || prev.image }));
     } catch (e: any) {
       console.error(e);
       alert(e?.message || "Image upload failed");
@@ -538,8 +538,8 @@ export default function Admin() {
                     {!!(propForm.images as any)?.length && (
                       <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-2">
                         {(propForm.images as any[]).map((url, idx) => (
-                          <div key={`${url}-${idx}`} className="relative rounded-lg border overflow-hidden">
-                            <img src={url} alt="Property" className="w-full h-24 object-cover" />
+                          <div key={`${resolveImageUrl(url as any)}-${idx}`} className="relative rounded-lg border overflow-hidden">
+                            <img src={resolveImageUrl(url as any)} alt="Property" className="w-full h-24 object-cover" />
                             <button
                               type="button"
                               onClick={() =>
@@ -690,11 +690,20 @@ export default function Admin() {
                         className="w-full px-3 py-2 border rounded-lg"
                       />
                       {projForm.image ? (
-                        <img
-                          src={(projForm.image as any) || ""}
-                          alt="project"
-                          className="h-12 w-12 rounded object-cover border"
-                        />
+                        <div className="relative">
+                          <img
+                            src={resolveImageUrl((projForm.image as any) || "")}
+                            alt="project"
+                            className="h-12 w-12 rounded object-cover border"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setProjForm((prev) => ({ ...prev, image: "" }))}
+                            className="absolute -top-2 -right-2 bg-black/70 text-white text-[10px] px-1.5 py-0.5 rounded"
+                          >
+                            X
+                          </button>
+                        </div>
                       ) : null}
                     </div>
                     <p className="text-xs text-gray-500 mt-1">
