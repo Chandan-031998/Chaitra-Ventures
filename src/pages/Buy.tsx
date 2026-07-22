@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Filter } from 'lucide-react';
 import { api, Property } from '../lib/api';
+import { PROPERTY_TYPE_OPTIONS } from '../lib/propertyTypes';
 import PropertyCard from '../components/PropertyCard';
 
 const parsePriceRange = (v: string): { min?: number; max?: number } => {
@@ -90,10 +91,11 @@ const Buy = () => {
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-[#C9A227] focus:outline-none"
                 >
                   <option value="all">All Types</option>
-                  <option value="apartment">Apartment</option>
-                  <option value="villa">Villa</option>
-                  <option value="plot">Plot</option>
-                  <option value="commercial">Commercial</option>
+                  {PROPERTY_TYPE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
                 </select>
               </div>
 

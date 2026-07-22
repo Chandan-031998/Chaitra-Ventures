@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { MapPin, Bed, Bath, Maximize } from 'lucide-react';
 import { Property } from '../lib/api';
+import { getPropertyTypeLabel } from '../lib/propertyTypes';
 
 interface PropertyCardProps {
   property: Property;
@@ -41,7 +42,7 @@ const PropertyCard = ({ property }: PropertyCardProps) => {
               {formatPrice(property.price)}
             </h3>
             <span className="text-sm text-gray-500 capitalize bg-gray-100 px-3 py-1 rounded-full">
-              {property.property_type}
+              {getPropertyTypeLabel(property.property_type)}
             </span>
           </div>
 

@@ -39,6 +39,7 @@ const IS_PRODUCTION = process.env.NODE_ENV === "production";
 const IS_VERCEL = Boolean(process.env.VERCEL);
 
 const app = express();
+app.set("trust proxy", true);
 
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
@@ -316,13 +317,31 @@ function titleCase(value) {
 }
 
 function publicBase(req) {
-  return (process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
+  const forwardedProto = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim();
+  const protocol = forwardedProto || req.protocol || "https";
+  return (process.env.PUBLIC_BASE_URL || `${protocol}://${req.get("host")}`).replace(/\/$/, "");
 }
 
 function toPublicUrl(req, url) {
   if (!url) return url;
-  if (/^https?:\/\//i.test(url)) return url;
   const base = publicBase(req);
+  if (/^https?:\/\//i.test(url)) {
+    try {
+      const source = new URL(url);
+      const targetBase = new URL(base);
+      if (
+        source.hostname === targetBase.hostname &&
+        targetBase.protocol === "https:" &&
+        source.protocol !== "https:"
+      ) {
+        source.protocol = "https:";
+        return source.toString();
+      }
+    } catch {
+      return url;
+    }
+    return url;
+  }
   return `${base}${url.startsWith("/") ? "" : "/"}${url}`;
 }
 

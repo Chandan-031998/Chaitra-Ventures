@@ -2,32 +2,12 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { LogOut, Plus, Trash2, Edit3, Building2, FolderKanban } from "lucide-react";
 import { api } from "../lib/api";
+import { PROPERTY_TYPE_OPTIONS } from "../lib/propertyTypes";
 
 const TOKEN_KEY = "chaitra_admin_token";
 
 type Tab = "properties" | "projects";
 type Mode = "sale" | "rent";
-const PROPERTY_TYPE_OPTIONS = [
-  { value: "apartment", label: "Apartment" },
-  { value: "independent_house", label: "Independent House" },
-  { value: "villa", label: "Villa" },
-  { value: "duplex", label: "Duplex" },
-  { value: "penthouse", label: "Penthouse" },
-  { value: "plot", label: "Plot" },
-  { value: "residential_land", label: "Residential Land" },
-  { value: "office_space", label: "Office Space" },
-  { value: "shop", label: "Shop" },
-  { value: "showroom", label: "Showroom" },
-  { value: "warehouse", label: "Warehouse" },
-  { value: "factory", label: "Factory" },
-  { value: "commercial_land", label: "Commercial Land" },
-  { value: "agricultural_land", label: "Agricultural Land" },
-  { value: "farm_land", label: "Farm Land" },
-  { value: "plantation", label: "Plantation" },
-  { value: "pg", label: "PG" },
-  { value: "hostel", label: "Hostel" },
-  { value: "serviced_apartment", label: "Serviced Apartment" },
-] as const;
 
 type Property = {
   id: number;
