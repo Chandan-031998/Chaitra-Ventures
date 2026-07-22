@@ -22,13 +22,19 @@ const DB_HOST = process.env.DB_HOST;
 const DB_USER = process.env.DB_USER;
 const DB_PASSWORD = process.env.DB_PASSWORD;
 const DB_NAME = process.env.DB_NAME;
-const CORS_ORIGIN = (
+function parseCorsOrigins(value) {
+  return String(value || "")
+    .replace(/^\[/, "")
+    .replace(/\]$/, "")
+    .split(",")
+    .map((origin) => origin.trim().replace(/^['"]|['"]$/g, ""))
+    .filter(Boolean);
+}
+
+const CORS_ORIGIN = parseCorsOrigins(
   process.env.CORS_ORIGIN ||
-  "http://localhost:5173,https://chaitraventures.vertexsoftware.in,https://chairaventures.vertexsoftware.in"
-)
-  .split(",")
-  .map((value) => value.trim())
-  .filter(Boolean);
+    "http://localhost:5173,https://chaitraventures.vertexsoftware.in,https://chairaventures.vertexsoftware.in"
+);
 const IS_PRODUCTION = process.env.NODE_ENV === "production";
 const IS_VERCEL = Boolean(process.env.VERCEL);
 
