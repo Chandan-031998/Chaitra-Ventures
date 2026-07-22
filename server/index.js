@@ -329,6 +329,9 @@ function toPublicUrl(req, url) {
     try {
       const source = new URL(url);
       const targetBase = new URL(base);
+      if (source.pathname.startsWith("/uploads/")) {
+        source.pathname = `/api${source.pathname}`;
+      }
       if (
         source.hostname === targetBase.hostname &&
         targetBase.protocol === "https:" &&
@@ -342,7 +345,8 @@ function toPublicUrl(req, url) {
     }
     return url;
   }
-  return `${base}${url.startsWith("/") ? "" : "/"}${url}`;
+  const normalizedPath = url.startsWith("/uploads/") ? `/api${url}` : url;
+  return `${base}${normalizedPath.startsWith("/") ? "" : "/"}${normalizedPath}`;
 }
 
 function rowToProperty(req, row) {
@@ -562,11 +566,30 @@ app.post("/api/admin/upload", auth, upload.array("images", 10), async (req, res)
       return res.status(400).json({ success: false, message: "No files uploaded" });
     }
 
-    const urls = files.map((file) => toPublicUrl(req, `/uploads/${file.filename}`));
+    const urls = files.map((file) => toPublicUrl(req, `/api/uploads/${file.filename}`));
     ok(res, { urls });
   } catch (error) {
     sendServerError(res, "admin-upload", error);
   }
+});
+
+app.get("/api/uploads/:filename", async (req, res) => {
+  const filename = path.basename(String(req.params.filename || ""));
+  const filePath = path.join(UPLOAD_DIR, filename);
+
+  if (!filename) {
+    return res.status(400).json({ success: false, message: "Missing filename" });
+  }
+
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({
+      success: false,
+      message: "Uploaded file not found",
+      path: `/api/uploads/${filename}`,
+    });
+  }
+
+  return res.sendFile(filePath);
 });
 
 app.get("/api/admin/properties", auth, async (req, res) => {
