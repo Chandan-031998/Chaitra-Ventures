@@ -13,14 +13,15 @@ const app = express();
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 
-const allowedOrigins = (
-  process.env.CORS_ORIGIN ||
-  "http://localhost:5173,https://chaitraventures.vertexsoftware.in"
-)
-  .split(",")
-  .map((origin) => origin.trim())
-  .filter(Boolean);
+// const allowedOrigins = (
+//   process.env.CORS_ORIGIN ||
+//   "http://localhost:5173,https://chaitraventures.vertexsoftware.in"
+// )
+//   .split(",")
+//   .map((origin) => origin.trim())
+//   .filter(Boolean);
 
+const allowedOrigins = process.env.CORS_ORIGIN;
 app.use(
   cors({
     origin(origin, callback) {

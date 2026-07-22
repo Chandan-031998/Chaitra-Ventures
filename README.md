@@ -49,3 +49,9 @@ Frontend runs on: `http://localhost:5173`
 ## Notes
 - Images are stored as **URLs** in the database.
 - `featured=1` shows a property on the Home page.
+
+
+
+git add .
+git commit -m "Fix missing property listing type"
+git push origin main
