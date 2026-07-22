@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS properties (
   description TEXT NOT NULL,
   price BIGINT NOT NULL DEFAULT 0,
   listing_type ENUM('sale','rent') NOT NULL,
-  property_type ENUM('apartment','villa','plot','commercial') NOT NULL,
+  property_type VARCHAR(64) NOT NULL,
   location VARCHAR(255) NOT NULL,
   bedrooms INT NOT NULL DEFAULT 0,
   bathrooms INT NOT NULL DEFAULT 0,

@@ -7,6 +7,27 @@ const TOKEN_KEY = "chaitra_admin_token";
 
 type Tab = "properties" | "projects";
 type Mode = "sale" | "rent";
+const PROPERTY_TYPE_OPTIONS = [
+  { value: "apartment", label: "Apartment" },
+  { value: "independent_house", label: "Independent House" },
+  { value: "villa", label: "Villa" },
+  { value: "duplex", label: "Duplex" },
+  { value: "penthouse", label: "Penthouse" },
+  { value: "plot", label: "Plot" },
+  { value: "residential_land", label: "Residential Land" },
+  { value: "office_space", label: "Office Space" },
+  { value: "shop", label: "Shop" },
+  { value: "showroom", label: "Showroom" },
+  { value: "warehouse", label: "Warehouse" },
+  { value: "factory", label: "Factory" },
+  { value: "commercial_land", label: "Commercial Land" },
+  { value: "agricultural_land", label: "Agricultural Land" },
+  { value: "farm_land", label: "Farm Land" },
+  { value: "plantation", label: "Plantation" },
+  { value: "pg", label: "PG" },
+  { value: "hostel", label: "Hostel" },
+  { value: "serviced_apartment", label: "Serviced Apartment" },
+] as const;
 
 type Property = {
   id: number;
@@ -18,7 +39,7 @@ type Property = {
   baths: number;
   area_sqft: number;
   listing_type: Mode; // sale | rent
-  property_type: "apartment" | "villa" | "plot" | "commercial";
+  property_type: string;
   status: "available" | "sold" | "rented";
   featured: boolean;
   images: string[];
@@ -463,10 +484,11 @@ export default function Admin() {
                         onChange={(e) => setPropForm({ ...propForm, property_type: e.target.value as any })}
                         className="w-full px-3 py-2 border rounded-lg"
                       >
-                        <option value="apartment">Apartment</option>
-                        <option value="villa">Villa</option>
-                        <option value="plot">Plot</option>
-                        <option value="commercial">Commercial</option>
+                        {PROPERTY_TYPE_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
                       </select>
                     </div>
                     <div>

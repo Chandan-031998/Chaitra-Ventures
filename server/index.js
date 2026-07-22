@@ -226,10 +226,35 @@ function toPropertyType(value) {
   const normalized = normEnum(value);
   if (!normalized) return "apartment";
   if (normalized === "apt" || normalized === "apartment") return "apartment";
+  if (normalized === "independent house" || normalized === "independent_house") {
+    return "independent_house";
+  }
   if (normalized === "villa") return "villa";
+  if (normalized === "duplex") return "duplex";
+  if (normalized === "penthouse") return "penthouse";
   if (normalized === "plot" || normalized === "land") return "plot";
-  if (normalized === "commercial") return "commercial";
-  return "apartment";
+  if (normalized === "residential land" || normalized === "residential_land") {
+    return "residential_land";
+  }
+  if (normalized === "office space" || normalized === "office_space") return "office_space";
+  if (normalized === "shop") return "shop";
+  if (normalized === "showroom") return "showroom";
+  if (normalized === "warehouse") return "warehouse";
+  if (normalized === "factory") return "factory";
+  if (normalized === "commercial" || normalized === "commercial land" || normalized === "commercial_land") {
+    return "commercial_land";
+  }
+  if (normalized === "agricultural land" || normalized === "agricultural_land") {
+    return "agricultural_land";
+  }
+  if (normalized === "farm land" || normalized === "farm_land") return "farm_land";
+  if (normalized === "plantation") return "plantation";
+  if (normalized === "pg") return "pg";
+  if (normalized === "hostel") return "hostel";
+  if (normalized === "serviced apartment" || normalized === "serviced_apartment") {
+    return "serviced_apartment";
+  }
+  return normalized.replace(/\s+/g, "_");
 }
 
 function toStatus(value) {
@@ -276,7 +301,12 @@ function toFeaturedFlag(value) {
 
 function titleCase(value) {
   const text = String(value ?? "");
-  return text ? text.charAt(0).toUpperCase() + text.slice(1) : text;
+  return text
+    ? text
+        .split("_")
+        .map((part) => (part ? part.charAt(0).toUpperCase() + part.slice(1) : part))
+        .join(" ")
+    : text;
 }
 
 function publicBase(req) {

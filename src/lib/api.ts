@@ -4,7 +4,7 @@ export interface Property {
   description: string;
   price: number;
   listing_type: 'sale' | 'rent';
-  property_type: 'apartment' | 'villa' | 'plot' | 'commercial';
+  property_type: string;
   location: string;
   bedrooms: number;
   bathrooms: number;
