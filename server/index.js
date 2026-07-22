@@ -101,7 +101,7 @@ const storage = multer.diskStorage({
   },
   filename: (_req, file, cb) => {
     const ext = path.extname(file.originalname || "").toLowerCase() || ".jpg";
-    const safeExt = [".jpg", ".jpeg", ".png", ".webp"].includes(ext) ? ext : ".jpg";
+    const safeExt = [".jpg", ".jpeg", ".png", ".webp", ".svg"].includes(ext) ? ext : ".jpg";
     const name = `img_${Date.now()}_${Math.random().toString(16).slice(2)}${safeExt}`;
     cb(null, name);
   },
@@ -111,8 +111,8 @@ const upload = multer({
   storage,
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
-    const allowed = /image\/(jpeg|png|webp)/.test(file.mimetype);
-    cb(allowed ? null : new Error("Only JPG/PNG/WEBP images are allowed"), allowed);
+    const allowed = /image\/(jpeg|png|webp|svg\+xml)/.test(file.mimetype);
+    cb(allowed ? null : new Error("Only JPG/PNG/WEBP/SVG images are allowed"), allowed);
   },
 });
 
@@ -759,7 +759,7 @@ app.use((error, _req, res, next) => {
 
   if (
     error.message === "Origin not allowed by CORS" ||
-    error.message === "Only JPG/PNG/WEBP images are allowed"
+    error.message === "Only JPG/PNG/WEBP/SVG images are allowed"
   ) {
     res.status(error.message === "Origin not allowed by CORS" ? 403 : 400).json({
       success: false,
