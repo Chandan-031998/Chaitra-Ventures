@@ -573,7 +573,7 @@ app.post("/api/admin/upload", auth, upload.array("images", 10), async (req, res)
   }
 });
 
-app.get("/api/uploads/:filename", async (req, res) => {
+function sendUploadedFile(req, res) {
   const filename = path.basename(String(req.params.filename || ""));
   const filePath = path.join(UPLOAD_DIR, filename);
 
@@ -585,12 +585,15 @@ app.get("/api/uploads/:filename", async (req, res) => {
     return res.status(404).json({
       success: false,
       message: "Uploaded file not found",
-      path: `/api/uploads/${filename}`,
+      path: req.originalUrl,
     });
   }
 
   return res.sendFile(filePath);
-});
+}
+
+app.get("/api/uploads/:filename", sendUploadedFile);
+app.get("/uploads/:filename", sendUploadedFile);
 
 app.get("/api/admin/properties", auth, async (req, res) => {
   const listing_type = req.query.listing_type ? toListingType(req.query.listing_type) : null;
