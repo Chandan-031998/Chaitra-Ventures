@@ -9,6 +9,9 @@ const fs = require("fs");
 require("dotenv").config();
 
 const app = express();
+const JWT_SECRET = process.env.JWT_SECRET;
+const ADMIN_USERNAME = process.env.ADMIN_USERNAME;
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
@@ -101,6 +104,40 @@ app.get("/api/health", async (req, res) => {
 // ------------------------------------
 
 // Admin login
+app.post("/api/admin/login", async (req, res) => {
+  const { username, password } = req.body || {};
+
+  if (!JWT_SECRET || !ADMIN_USERNAME || !ADMIN_PASSWORD) {
+    return res.status(500).json({
+      success: false,
+      message: "Authentication is not configured on the server",
+    });
+  }
+
+  if (!username || !password) {
+    return res.status(400).json({
+      success: false,
+      message: "Username and password are required",
+    });
+  }
+
+  if (username !== ADMIN_USERNAME || password !== ADMIN_PASSWORD) {
+    return res.status(401).json({
+      success: false,
+      message: "Invalid username or password",
+    });
+  }
+
+  const token = jwt.sign({ role: "admin", username }, JWT_SECRET, {
+    expiresIn: "7d",
+  });
+
+  return res.status(200).json({
+    success: true,
+    token,
+  });
+});
+
 // Public properties
 // Admin properties
 // Projects
